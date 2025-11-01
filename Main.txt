@@ -1,0 +1,541 @@
+-- by Shelby: Gubby + Noly Sound System + Bug Player System
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+
+-- Configs de WalkSpeed
+local defaultWalkSpeed = Humanoid.WalkSpeed
+local boostedSpeed = 45
+local decayTime = 3 -- segundos pra voltar pro padrão
+
+-- Sistema de Bug Player
+local buggedPlayers = {}
+local bugConnections = {}
+
+local function bugPlayer(targetPlayer)
+    local Remote = ReplicatedStorage:FindFirstChild("RE") and ReplicatedStorage.RE:FindFirstChild("1Gu1n")
+    if not Remote then return end
+    if not targetPlayer or not targetPlayer.Character then return end
+    
+    local playerName = targetPlayer.Name
+    if buggedPlayers[playerName] then
+        -- SE JÁ ESTÁ BUGADO: DESBUGA
+        if bugConnections[playerName] then
+            bugConnections[playerName]:Disconnect()
+            bugConnections[playerName] = nil
+        end
+        buggedPlayers[playerName] = nil
+        return false
+    end
+    
+    -- SE NÃO ESTÁ BUGADO: BUGA
+    buggedPlayers[playerName] = true
+    bugConnections[playerName] = RunService.Stepped:Connect(function()
+        local target = Players:FindFirstChild(playerName)
+        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then
+            if bugConnections[playerName] then
+                bugConnections[playerName]:Disconnect()
+                bugConnections[playerName] = nil
+            end
+            buggedPlayers[playerName] = nil
+            return
+        end
+        
+        local crazyVector = Vector3.new(
+            math.random(1e10000, 1e10000),
+            math.random(1e10000, 1e10000),
+            math.random(1e10000, 1e10000)
+        )
+        
+        local args = {
+            [1] = target.Character.HumanoidRootPart,
+            [2] = target.Character.HumanoidRootPart,
+            [3] = crazyVector,
+            [4] = target.Character.HumanoidRootPart.Position,
+            [5] = LocalPlayer.Backpack:FindFirstChild("Assault") and LocalPlayer.Backpack.Assault.GunScript_Local:FindFirstChild("MuzzleEffect"),
+            [6] = LocalPlayer.Backpack:FindFirstChild("Assault") and LocalPlayer.Backpack.Assault.GunScript_Local:FindFirstChild("HitEffect"),
+            [7] = 3000,
+            [8] = 3000,
+            [9] = { [1] = false },
+            [10] = {
+                [1] = 10000,
+                [2] = Vector3.new(3000, 3000, 3000),
+                [3] = BrickColor.new(29),
+                [4] = 0.05,
+                [5] = Enum.Material.SmoothPlastic,
+                [6] = 0.05
+            },
+            [11] = true,
+            [12] = false
+        }
+        
+        Remote:FireServer(unpack(args))
+    end)
+    return true
+end
+
+local function getPlayerFromMouse(mouse)
+    local target = mouse.Target
+    if not target then return nil end
+    local character = target.Parent
+    while character and not character:FindFirstChild("Humanoid") do
+        character = character.Parent
+    end
+    if character and character:FindFirstChild("Humanoid") then
+        return Players:GetPlayerFromCharacter(character)
+    end
+    return nil
+end
+
+-- Muda a cor do corpo
+pcall(function()
+    local args = {[1] = "Institutional white"}
+    ReplicatedStorage.Remotes.ChangeBodyColor:FireServer(unpack(args))
+end)
+
+-- Muda partes do corpo
+pcall(function()
+    local args = {
+        [1] = {
+            [1] = 114525997390086, -- Torso
+            [2] = 124496762543782, -- Perna Esquerda 
+            [3] = 136750702448142, -- Perna Direita 
+            [4] = 80856732801320,  -- Braço Direito
+            [5] = 90534370226216,  -- Braço Esquerdo 
+            [6] = 0
+        }
+    }
+    ReplicatedStorage.Remotes.ChangeCharacterBody:InvokeServer(unpack(args))
+end)
+
+-- Coloca acessórios atuais do humanoid
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local WearRemote = Remotes:WaitForChild("Wear")
+
+pcall(function()
+    local Desc = Humanoid:GetAppliedDescription()
+    for _, accessory in ipairs(Desc:GetAccessories(true)) do
+        if accessory.AssetId then
+            WearRemote:InvokeServer(accessory.AssetId)
+        end
+    end
+
+    local accessoriesToWear = {130565002944315} -- adicionais
+    for _, id in ipairs(accessoriesToWear) do
+        WearRemote:InvokeServer(id)
+    end
+end)
+
+-- Cria a ferramenta Gubby
+local tool = Instance.new("Tool")
+tool.Name = "Gubby"
+tool.RequiresHandle = false
+tool.CanBeDropped = false
+tool.TextureId = "rbxassetid://132322722596320"
+tool.Parent = LocalPlayer:WaitForChild("Backpack")
+
+-- Sons do Gubby + Noly
+local soundIds = {9118862378, 6715870978} -- adiciona o sound do Noly
+local volume = 0.80
+local nolyRemote = ReplicatedStorage:FindFirstChild("RE") and ReplicatedStorage.RE:FindFirstChild("1Gu1nSound1s")
+
+local function playLocalSound(parent)
+    pcall(function()
+        local sound = Instance.new("Sound")
+        local soundId = soundIds[math.random(1, #soundIds)]
+        sound.SoundId = "rbxassetid://"..soundId
+        sound.Volume = volume
+        sound.Parent = parent
+        sound:Play()
+        sound.Ended:Connect(function() sound:Destroy() end)
+    end)
+end
+
+-- Ferramenta equipada
+local equipped = false
+local mouse
+
+tool.Equipped:Connect(function(mouseInput)
+    equipped = true
+    mouse = mouseInput
+    
+    -- Conectar clique do mouse para bugar jogadores
+    if mouse then
+        mouse.Button1Down:Connect(function()
+            -- Verificar se clicou em um jogador para bugar
+            local targetPlayer = getPlayerFromMouse(mouse)
+            if targetPlayer and targetPlayer ~= LocalPlayer then
+                local wasBugged = buggedPlayers[targetPlayer.Name]
+                local isNowBugged = bugPlayer(targetPlayer)
+                
+                -- Notificação de qual jogador foi bugado/desbugado
+                if isNowBugged then
+                    StarterGui:SetCore("SendNotification", {
+                        Title = "Gubby Bug System",
+                        Text = "Bugando: " .. targetPlayer.Name,
+                        Duration = 3
+                    })
+                else
+                    StarterGui:SetCore("SendNotification", {
+                        Title = "Gubby Bug System",
+                        Text = "Desbugado: " .. targetPlayer.Name,
+                        Duration = 3
+                    })
+                end
+            end
+        end)
+    end
+end)
+
+tool.Unequipped:Connect(function()
+    equipped = false
+    mouse = nil
+end)
+
+-- Clique aumenta WalkSpeed e toca sons
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if not equipped or gpe then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        -- aumenta instantaneamente
+        Humanoid.WalkSpeed = boostedSpeed
+
+        -- reduz devagar pro padrão
+        local step = 0.1
+        local decrement = (boostedSpeed - defaultWalkSpeed) * step / decayTime
+        spawn(function()
+            local current = Humanoid.WalkSpeed
+            while current > defaultWalkSpeed do
+                current = current - decrement
+                if current < defaultWalkSpeed then current = defaultWalkSpeed end
+                Humanoid.WalkSpeed = current
+                wait(step)
+            end
+        end)
+
+        -- toca som local
+        playLocalSound(Character.HumanoidRootPart)
+
+        -- toca som remoto Noly
+        if nolyRemote then
+            pcall(function()
+                nolyRemote:FireServer(Character.HumanoidRootPart, 126967668249129, 0.65)
+            end)
+        end
+    end
+end)
+
+-- Comandos do chat para controle do bug
+LocalPlayer.Chatted:Connect(function(message)
+    local msg = message:lower()
+    if msg == "/stopallbugs" then
+        for _, connection in pairs(bugConnections) do
+            if connection then connection:Disconnect() end
+        end
+        bugConnections = {}
+        buggedPlayers = {}
+        StarterGui:SetCore("SendNotification", {
+            Title = "Bug System",
+            Text = "Todos os bugs foram parados",
+            Duration = 3
+        })
+    elseif msg == "/buggedlist" then
+        local count = 0
+        local names = ""
+        for name in pairs(buggedPlayers) do 
+            count = count + 1 
+            if names == "" then
+                names = name
+            else
+                names = names .. ", " .. name
+            end
+        end
+        StarterGui:SetCore("SendNotification", {
+            Title = "Bug System",
+            Text = "Jogadores bugados: " .. count .. "\n" .. (names == "" and "Nenhum" or names),
+            Duration = 5
+        })
+    elseif msg:sub(1, 5) == "/bug " then
+        local targetName = msg:sub(6)
+        local targetPlayer = Players:FindFirstChild(targetName)
+        if targetPlayer then
+            local isNowBugged = bugPlayer(targetPlayer)
+            StarterGui:SetCore("SendNotification", {
+                Title = "Bug System",
+                Text = isNowBugged and "Bugando: " .. targetName or "Já estava bugado: " .. targetName,
+                Duration = 3
+            })
+        else
+            StarterGui:SetCore("SendNotification", {
+                Title = "Bug System",
+                Text = "Jogador não encontrado: " .. targetName,
+                Duration = 3
+            })
+        end
+    elseif msg:sub(1, 7) == "/unbug " then
+        local targetName = msg:sub(8)
+        local targetPlayer = Players:FindFirstChild(targetName)
+        if targetPlayer and buggedPlayers[targetName] then
+            if bugConnections[targetName] then
+                bugConnections[targetName]:Disconnect()
+                bugConnections[targetName] = nil
+            end
+            buggedPlayers[targetName] = nil
+            StarterGui:SetCore("SendNotification", {
+                Title = "Bug System",
+                Text = "Desbugado: " .. targetName,
+                Duration = 3
+            })
+        else
+            StarterGui:SetCore("SendNotification", {
+                Title = "Bug System",
+                Text = "Jogador não está bugado: " .. targetName,
+                Duration = 3
+            })
+        end
+    end
+end)
+
+-- Limpar quando jogador sair
+Players.PlayerRemoving:Connect(function(leavingPlayer)
+    local playerName = leavingPlayer.Name
+    if bugConnections[playerName] then
+        bugConnections[playerName]:Disconnect()
+        bugConnections[playerName] = nil
+    end
+    if buggedPlayers[playerName] then
+        buggedPlayers[playerName] = nil
+    end
+end)
+
+-- Aplica todas as animações pro humanoid (não tocam automaticamente)
+pcall(function()
+    local animationIds = {
+        Idle  = 2510235063,
+        Walk  = 2510235063,
+        Run   = 2510238627,
+        Jump  = 2510236649,
+        Fall  = 2510233257,
+        Climb = 2510230574,
+        Swim  = 2510240941
+    }
+    for _, animId in pairs(animationIds) do
+        WearRemote:InvokeServer(animId)
+    end
+end)
+
+Humanoid.Jump = false
+
+-- Notificação inicial
+StarterGui:SetCore("SendNotification", {
+    Title = "Gubby Special Members",
+    Text = "By Rick",
+    Icon = "rbxassetid://132322722596320",
+    Duration = 8,
+    Button1 = "OK"
+})
+
+-- Sistema de Expansão Gubby
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local TextChatService = game:GetService("TextChatService")
+
+local player = Players.LocalPlayer
+
+-- Sistema de Expansão Gubby
+local cancelExpansion = false
+local expansionSound = nil
+local expansionModel = nil
+local originalSky = nil
+
+-- Tool para ativar expansão
+local startTool = Instance.new("Tool")
+startTool.Name = "ativar expansão do Gubby"
+startTool.RequiresHandle = false
+startTool.Parent = player.Backpack
+
+startTool.Activated:Connect(function()
+    cancelExpansion = false
+
+    -- Enviar mensagem no chat
+    if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+        TextChatService.TextChannels.RBXGeneral:SendAsync(
+            "hi\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\r\rServer: expansão do Gubby"
+        )
+    else
+        print("Gubby chorou no banho F")
+    end
+
+    -- Função para ativar o domínio
+    local function ativarDominio()
+        local char = player.Character or player.CharacterAdded:Wait()
+        local hrp = char:WaitForChild("HumanoidRootPart")
+
+        local dominio = Instance.new("Model", workspace)
+        dominio.Name = "InfiniteVoid"
+        expansionModel = dominio
+
+        -- SOM apenas, sem cubo/parte visual
+        local som = Instance.new("Sound", dominio)
+        som.SoundId = "rbxassetid://103439929127461"
+        som.Volume = 910000
+        som.Looped = true
+        som:Play()
+        expansionSound = som
+
+        -- Salvar e substituir o céu original
+        originalSky = Lighting:FindFirstChildOfClass("Sky")
+        if originalSky then
+            originalSky.Parent = nil
+        end
+
+        local newSky = Instance.new("Sky", Lighting)
+        newSky.SkyboxBk = "rbxassetid://85844628391351"
+        newSky.SkyboxDn = "rbxassetid://85844628391351"
+        newSky.SkyboxFt = "rbxassetid://85844628391351"
+        newSky.SkyboxLf = "rbxassetid://85844628391351"
+        newSky.SkyboxRt = "rbxassetid://85844628391351"
+        newSky.SkyboxUp = "rbxassetid://85844628391351"
+    end
+
+    ativarDominio()
+
+    -- Sistema de áudio
+    local selectedAudioID = 103439929127461
+
+    task.spawn(function()
+        while not cancelExpansion do
+            local remote = ReplicatedStorage:FindFirstChild("RE") and ReplicatedStorage.RE:FindFirstChild("1Gu1nSound1s")
+            if remote then
+                remote:FireServer(workspace, selectedAudioID, 1)
+            end
+
+            local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local sound = Instance.new("Sound")
+                sound.SoundId = "rbxassetid://" .. selectedAudioID
+                sound.Volume = 1
+                sound.Looped = false
+                sound.Parent = root
+                sound:Play()
+                sound.Ended:Connect(function() sound:Destroy() end)
+                task.wait(sound.TimeLength + 0.1)
+            else
+                break
+            end
+        end
+    end)
+
+    -- Sistema de armas e tiros
+    local RE = ReplicatedStorage:WaitForChild("RE")
+    local ClearEvent = RE:FindFirstChild("1Clea1rTool1s")
+    local ToolEvent = RE:FindFirstChild("1Too1l")
+    local FireEvent = RE:FindFirstChild("1Gu1n")
+
+    local function clearAllTools()
+        if ClearEvent then ClearEvent:FireServer("ClearAllTools") end
+    end
+    
+    local function getAssault()
+        if ToolEvent then ToolEvent:InvokeServer("PickingTools","Assault") end
+    end
+    
+    local function hasAssault() 
+        return player.Backpack:FindFirstChild("Assault") ~= nil 
+    end
+    
+    local function fireAtPart(targetPart)
+        local gunScript = player.Backpack:FindFirstChild("Assault") and player.Backpack.Assault:FindFirstChild("GunScript_Local")
+        if not gunScript or not targetPart then return end
+        local args = {
+            targetPart,
+            targetPart,
+            Vector3.new(1e14, 1e14, 1e14),
+            targetPart.Position,
+            gunScript:FindFirstChild("MuzzleEffect"),
+            gunScript:FindFirstChild("HitEffect"),
+            0,
+            0,
+            {false},
+            {25, Vector3.new(100, 100, 100), BrickColor.new("White"), 0.25, Enum.Material.SmoothPlastic, 0.25},
+            true,
+            false
+        }
+        FireEvent:FireServer(unpack(args))
+    end
+    
+    local function fireAtAllPlayers(times)
+        for i = 1, times do
+            if cancelExpansion then break end
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    fireAtPart(p.Character.HumanoidRootPart)
+                    task.wait(0.1)
+                end
+            end
+        end
+    end
+
+    -- Loop principal da expansão
+    task.spawn(function()
+        while not cancelExpansion do
+            clearAllTools()
+            getAssault()
+            repeat task.wait(0.2) until hasAssault() or cancelExpansion
+            if not cancelExpansion then 
+                fireAtAllPlayers(3) 
+                task.wait(1) 
+            end
+        end
+    end)
+end)
+
+-- Tool para parar expansão
+local stopTool = Instance.new("Tool")
+stopTool.Name = "parar expansão do Gubby"
+stopTool.RequiresHandle = false
+stopTool.Parent = player.Backpack
+
+stopTool.Activated:Connect(function()
+    cancelExpansion = true
+
+    -- Parar e remover som
+    if expansionSound then
+        expansionSound:Stop()
+        expansionSound:Destroy()
+        expansionSound = nil
+    end
+
+    -- Remover modelo de expansão
+    if expansionModel and expansionModel.Parent then
+        expansionModel:Destroy()
+        expansionModel = nil
+    end
+
+    -- Restaurar céu original
+    local currentSky = Lighting:FindFirstChildOfClass("Sky")
+    if currentSky then currentSky:Destroy() end
+
+    if originalSky then
+        originalSky.Parent = Lighting
+        originalSky = nil
+    end
+
+    -- Mensagem de cancelamento
+    if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+        TextChatService.TextChannels.RBXGeneral:SendAsync("expansão do Gubby cancelada")
+    else
+        print("Expansão Gubby cancelada")
+    end
+end)
+
+print("✅ Sistema de Expansão Gubby carregado com sucesso!")
